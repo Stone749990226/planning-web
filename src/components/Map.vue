@@ -1,5 +1,6 @@
 <template>
     <div id="map-container"></div>
+    <!-- 进度条面板 -->
     <div class="controls">
         <button @click="togglePlayback" :class="{ playing: isPlaying }">
             {{ isPlaying ? '暂停' : '开始' }}
@@ -18,12 +19,55 @@
             </div>
         </div>
     </div>
+    <!-- 路径规划面板 -->
+    <div class="plan-panel" :class="{ active: showPanel }">
+        <div class="panel-header">
+            <h3>路径规划</h3>
+            <button class="close-btn" @click="togglePanel">×</button>
+        </div>
+
+        <div class="panel-content">
+            <div class="form-item">
+                <div class="tip-text">{{ tipText }}</div>
+            </div>
+
+            <div class="form-item">
+                <label>出发时间</label>
+                <input type="text" v-model="formData.start_time" readonly>
+            </div>
+
+            <div class="form-item">
+                <label>起点坐标</label>
+                <input type="text" v-model="formData.start" readonly>
+            </div>
+
+            <div class="form-item">
+                <label>终点坐标</label>
+                <input type="text" v-model="formData.end" readonly>
+            </div>
+
+            <div class="form-item">
+                <label>飞行速度 (km/h)</label>
+                <input type="number" v-model.number="formData.speed" step="10" min="0">
+            </div>
+
+            <div class="action-buttons" v-if="showActions">
+                <button class="plan-btn" @click="submitPlan">路径规划</button>
+                <button class="clear-btn" @click="clearMarkers">清空标记</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Plan按钮 -->
+    <button class="plan-trigger" @click="togglePanel">Plan</button>
 </template>
 
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import startIconUrl from '@/assets/icon_start_point.png';
+import endIconUrl from '@/assets/icon_end_point.png';
 
 const FADE_DURATION = 500
 const PLAY_INTERVAL = 2000
@@ -128,6 +172,165 @@ function fadeOverlay(oldLayer, newLayer) {
         }
     }
     animationFrame.value = requestAnimationFrame(animate)
+}
+
+const showPanel = ref(false)
+const mapClickHandler = ref(null)
+const markers = ref({
+    start: null,
+    end: null
+})
+
+// 表单数据
+const formData = ref({
+    start_time: '',
+    mark_time: '',
+    start: '',
+    end: '',
+    speed: null
+})
+
+const startIcon = L.icon({
+    iconUrl: startIconUrl,
+    iconSize: [15, 15],
+    iconAnchor: [12, 41]
+})
+
+const endIcon = L.icon({
+    iconUrl: endIconUrl,
+    iconSize: [15, 15],
+    iconAnchor: [12, 41]
+})
+
+// 计算属性
+const tipText = computed(() => {
+    if (!markers.value.start) return '请在地图上标记起点'
+    if (!markers.value.end) return '请在地图上标记终点'
+    return '标记完成，请输入速度'
+})
+
+const showActions = computed(() => {
+    return markers.value.start && markers.value.end
+})
+
+// 面板切换逻辑
+const togglePanel = () => {
+    showPanel.value = !showPanel.value
+    if (showPanel.value) {
+        // 记录时间戳
+        formData.value.start_time = getCurrentTimestamp()
+        formData.value.mark_time = getFirstImageTimestamp()
+        // 暂停轮播
+        stopPlayback()
+        setupMapInteraction()
+    } else {
+        clearMapInteraction()
+    }
+}
+
+// 获取时间戳方法
+const getCurrentTimestamp = () => {
+    const filename = images[currentIndex.value].split('/').pop()
+    return filename.slice(0, -4)
+}
+
+const getFirstImageTimestamp = () => {
+    const firstImage = images[0].split('/').pop()
+    return firstImage.slice(0, -4)
+}
+
+// 地图交互逻辑
+const setupMapInteraction = () => {
+    mapClickHandler.value = (e) => {
+        if (!markers.value.start) {
+            setStartMarker(e.latlng)
+        } else if (!markers.value.end) {
+            setEndMarker(e.latlng)
+        }
+    }
+    map.value.on('click', mapClickHandler.value)
+}
+
+const clearMapInteraction = () => {
+    if (mapClickHandler.value) {
+        map.value.off('click', mapClickHandler.value)
+    }
+}
+
+// 标记处理
+const setStartMarker = (latlng) => {
+    if (markers.value.start) markers.value.start.remove()
+    markers.value.start = L.marker(latlng, { icon: startIcon })
+        .addTo(map.value)
+    updateFormData('start', latlng)
+}
+
+const setEndMarker = (latlng) => {
+    if (markers.value.end) markers.value.end.remove()
+    markers.value.end = L.marker(latlng, { icon: endIcon })
+        .addTo(map.value)
+    updateFormData('end', latlng)
+}
+
+const updateFormData = (type, latlng) => {
+    const lat = latlng.lat.toFixed(4)
+    const lng = latlng.lng.toFixed(4)
+    formData.value[type] = `北纬${lat}，东经${lng}`
+}
+
+// 清空标记
+const clearMarkers = () => {
+    if (markers.value.start) markers.value.start.remove()
+    if (markers.value.end) markers.value.end.remove()
+    markers.value = { start: null, end: null }
+    formData.value.start = ''
+    formData.value.end = ''
+}
+
+// 提交逻辑
+const submitPlan = async () => {
+    if (!validateForm()) return
+
+    const payload = {
+        start: parseCoordinate(formData.value.start),
+        end: parseCoordinate(formData.value.end),
+        start_time: formData.value.start_time,
+        mark_time: formData.value.mark_time,
+        speed: formData.value.speed
+    }
+
+    try {
+        // 替换为实际API地址
+        const response = await fetch('/api/path-plan', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        // 处理响应...
+    } catch (error) {
+        console.error('请求失败:', error)
+    }
+}
+
+// 辅助方法
+const parseCoordinate = (str) => {
+    const matches = str.match(/北纬([\d.]+)，东经([\d.]+)/)
+    return {
+        lat: parseFloat(matches[1]),
+        lon: parseFloat(matches[2])
+    }
+}
+
+const validateForm = () => {
+    if (!formData.value.start || !formData.value.end) {
+        alert('请先标记起点和终点')
+        return false
+    }
+    if (!formData.value.speed || formData.value.speed <= 0) {
+        alert('请输入有效的航行速度')
+        return false
+    }
+    return true
 }
 
 watch(currentIndex, (newVal, oldVal) => {
@@ -287,5 +490,94 @@ button.playing:hover {
     font-size: 12px;
     white-space: nowrap;
     pointer-events: none;
+}
+
+.plan-panel {
+    position: fixed;
+    top: 20px;
+    right: -350px;
+    width: 320px;
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    transition: right 0.3s ease;
+    z-index: 1000;
+}
+
+.plan-panel.active {
+    right: 20px;
+}
+
+.panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px;
+    border-bottom: 1px solid #eee;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    padding: 0 8px;
+    color: #666;
+}
+
+.panel-content {
+    padding: 16px;
+}
+
+.form-item {
+    margin-bottom: 16px;
+}
+
+.form-item label {
+    display: block;
+    margin-bottom: 4px;
+    color: #666;
+    font-size: 14px;
+}
+
+.form-item input {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.tip-text {
+    color: #666;
+    font-size: 14px;
+    padding: 8px 0;
+}
+
+.action-buttons {
+    margin-top: 20px;
+    display: flex;
+    gap: 10px;
+}
+
+.plan-btn {
+    background: #10b981;
+    color: white;
+    padding: 8px 16px;
+}
+
+.clear-btn {
+    background: #ef4444;
+    color: white;
+    padding: 8px 16px;
+}
+
+.plan-trigger {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 8px 16px;
+    background: #3b82f6;
+    color: white;
+    z-index: 1000;
 }
 </style>
