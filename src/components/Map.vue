@@ -68,6 +68,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import startIconUrl from '@/assets/icon_start_point.png';
 import endIconUrl from '@/assets/icon_end_point.png';
+import { routeApi } from '@/api'
 
 const FADE_DURATION = 500
 const PLAY_INTERVAL = 2000
@@ -187,19 +188,19 @@ const formData = ref({
     mark_time: '',
     start: '',
     end: '',
-    speed: null
+    speed: 600
 })
 
 const startIcon = L.icon({
     iconUrl: startIconUrl,
     iconSize: [15, 15],
-    iconAnchor: [12, 41]
+    iconAnchor: [7.5, 7.5]
 })
 
 const endIcon = L.icon({
     iconUrl: endIconUrl,
     iconSize: [15, 15],
-    iconAnchor: [12, 41]
+    iconAnchor: [7.5, 7.5]
 })
 
 // 计算属性
@@ -225,6 +226,7 @@ const togglePanel = () => {
         setupMapInteraction()
     } else {
         clearMapInteraction()
+        clearMarkers()
     }
 }
 
@@ -291,27 +293,48 @@ const clearMarkers = () => {
 const submitPlan = async () => {
     if (!validateForm()) return
 
-    const payload = {
-        start: parseCoordinate(formData.value.start),
-        end: parseCoordinate(formData.value.end),
-        start_time: formData.value.start_time,
-        mark_time: formData.value.mark_time,
-        speed: formData.value.speed
-    }
-
     try {
-        // 替换为实际API地址
-        const response = await fetch('/api/path-plan', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        })
-        // 处理响应...
+        function formatDateTime(input) {
+            // 将输入转换为字符串（兼容数字输入）
+            const str = String(input);
+
+            // 分解日期时间组成部分
+            const year = str.substring(0, 4);
+            const month = str.substring(4, 6);
+            const day = str.substring(6, 8);
+            const hour = str.substring(8, 10);
+            const minute = str.substring(10, 12);
+
+            // 拼接成标准格式
+            return `${year}-${month}-${day} ${hour}:${minute}`;
+        }
+        // 转换参数格式（根据后端要求）
+        const params = {
+            start: parseCoordinate(formData.value.start),
+            end: parseCoordinate(formData.value.end),
+            start_time: formatDateTime(formData.value.start_time),
+            "mark_time": formatDateTime(getFirstImageTimestamp()),
+            speed: formData.value.speed,
+            "time_step": 15,
+            "threshold": 0,
+            "structure_size": 5
+        }
+        // 调用封装的API方法
+        const response = await routeApi.calcRoute(JSON.stringify(params))
+        console.log("[submitPlan] response")
+        console.log(response.data.route)
+        // 处理响应数据（根据实际返回结构）
+        if (response.status === 200) {
+            console.log('路径规划成功:', response.data)
+            // 更新地图路径等操作...
+        } else {
+            alert(`请求失败: ${response.message}`)
+        }
     } catch (error) {
-        console.error('请求失败:', error)
+        console.error('请求异常:', error)
+        alert('网络请求失败，请检查连接')
     }
 }
-
 // 辅助方法
 const parseCoordinate = (str) => {
     const matches = str.match(/北纬([\d.]+)，东经([\d.]+)/)
@@ -356,6 +379,8 @@ onMounted(() => {
     map.value = L.map('map-container', {
         center: [23.132191, 116.266530],
         zoom: 7,
+        minZoom: 5,
+        maxZoom: 11,
         attributionControl: false,
         fadeAnimation: false
     })
@@ -364,6 +389,8 @@ onMounted(() => {
 
     currentOverlay.value = L.imageOverlay(preloadedImages[0].src, bounds, {
         opacity: 0.5,
+        minZoom: 5,
+        maxZoom: 11,
         interactive: false
     }).addTo(map.value)
 
@@ -541,7 +568,7 @@ button.playing:hover {
 }
 
 .form-item input {
-    width: 100%;
+    width: 90%;
     padding: 8px;
     border: 1px solid #ddd;
     border-radius: 4px;
