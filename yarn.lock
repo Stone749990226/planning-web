@@ -550,6 +550,11 @@ hasown@^2.0.2:
   dependencies:
     function-bind "^1.1.2"
 
+leaflet-rotatedmarker@^0.2.0:
+  version "0.2.0"
+  resolved "https://registry.npmmirror.com/leaflet-rotatedmarker/-/leaflet-rotatedmarker-0.2.0.tgz#4467f49f98d1bfd56959bd9c6705203dd2601277"
+  integrity sha512-yc97gxLXwbZa+Gk9VCcqI0CkvIBC9oNTTjFsHqq4EQvANrvaboib4UdeQLyTnEqDpaXHCqzwwVIDHtvz2mUiDg==
+
 leaflet@^1.7.0:
   version "1.7.0"
   resolved "https://registry.npmmirror.com/leaflet/-/leaflet-1.7.0.tgz"

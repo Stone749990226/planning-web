@@ -66,9 +66,10 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import 'leaflet-rotatedmarker';
 import { routeApi } from '@/api'
 import { startIcon, endIcon, planeIcon } from '@/utils/icon.js'
-import { splitFlightPath } from '@/utils/splitpath.js'
+import { colonTimeToMinutes, splitFlightPath } from '@/utils/splitpath.js'
 
 const FADE_DURATION = 500
 const PLAY_INTERVAL = 2000
@@ -76,7 +77,8 @@ const PLAY_INTERVAL = 2000
 const map = ref(null)
 const currentOverlay = ref(null)
 const nextOverlay = ref(null)
-const animationFrame = ref(null)
+const animationFrameFade = ref(null)
+const animationFrameFlight = ref(null)
 const timer = ref(null)
 
 const modules = import.meta.glob('@/assets/example/*.png', { eager: true })
@@ -102,7 +104,7 @@ const totalImages = images.length
 const isLastImage = computed(() => currentIndex.value === totalImages - 1)
 const currentTimeDisplay = computed(() => {
     const filename = images[currentIndex.value].split('/').pop()
-    return formatTime(filename.slice(0, -4).slice(-4))
+    return insertColonToTime(filename.slice(0, -4).slice(-4))
 })
 
 // 图片的左上角和右下角边界
@@ -112,13 +114,13 @@ const bounds = [
 ]
 
 // 将形如0915的字符串转为09:15
-function formatTime(timeStr) {
+function insertColonToTime(timeStr) {
     return `${timeStr.slice(0, 2)}:${timeStr.slice(2)}`
 }
 
 function getTimeFromIndex(index) {
     const filename = images[index].split('/').pop()
-    return formatTime(filename.slice(0, -4).slice(-4))
+    return insertColonToTime(filename.slice(0, -4).slice(-4))
 }
 
 function togglePlayback() {
@@ -127,6 +129,7 @@ function togglePlayback() {
     } else {
         if (isLastImage.value) currentIndex.value = 0
         startPlayback()
+        startFlightAnimation()
     }
 }
 
@@ -146,6 +149,30 @@ function stopPlayback() {
     clearInterval(timer.value)
 }
 
+const startFlightAnimation = () => {
+    cancelAnimationFrame(animationFrameFlight.value)
+    animationStartTime.value = performance.now()
+    currentProgress.value = 0
+
+    const animate = (timestamp) => {
+        const elapsed = timestamp - animationStartTime.value
+        currentProgress.value = Math.min(elapsed / PLAY_INTERVAL, 1)
+
+        updateFlightPosition(currentProgress.value)
+
+        if (currentProgress.value < 1) {
+            animationFrameFlight.value = requestAnimationFrame(animate)
+        } else {
+            currentIndex.value = Math.min(currentIndex.value + 1, totalImages - 1)
+            if (currentIndex.value < totalImages - 1) {
+                startFlightAnimation()
+            }
+        }
+    }
+
+    animationFrameFlight.value = requestAnimationFrame(animate)
+}
+
 // 通过坐标计算，实现 ​​“点击进度条跳转到指定位置”​ 的交互逻辑
 function handleProgressClick(event) {
     const rect = event.currentTarget.getBoundingClientRect()
@@ -156,6 +183,7 @@ function handleProgressClick(event) {
     )
     currentIndex.value = clickedIndex
     if (!isPlaying.value) startPlayback()
+    updateFlightPosition()
 }
 
 const showPanel = ref(false)
@@ -173,6 +201,7 @@ const formData = ref({
     end: '',
     speed: 600
 })
+
 
 // 计算属性
 const tipText = computed(() => {
@@ -246,85 +275,161 @@ const updateFormData = (type, latlng) => {
     formData.value[type] = `北纬${lat}，东经${lng}`
 }
 
-// 清空标记
 const clearMarkers = () => {
     if (markers.value.start) markers.value.start.remove()
     if (markers.value.end) markers.value.end.remove()
     markers.value = { start: null, end: null }
     formData.value.start = ''
     formData.value.end = ''
+    clearPlanePath()
+}
+
+const flightPath = ref(null)
+const planeMarker = ref(null)
+const currentPathSegments = ref([])
+const currentTrajectory = ref([])
+const isFlying = ref(false)
+const animationStartTime = ref(0)
+const currentProgress = ref(0)
+const interpolatePoint = (points, ratio) => {
+    if (points.length < 2 || ratio <= 0) return { pos: points[0], angle: 0 }
+    if (ratio >= 1) return { pos: points[points.length - 1], angle: 0 }
+
+    const totalLength = points.length - 1
+    const exactIndex = ratio * totalLength
+    const index = Math.floor(exactIndex)
+    const segmentRatio = exactIndex - index
+
+    const prevPoint = points[index]
+    const nextPoint = points[index + 1]
+
+    // 计算中间点
+    const lat = prevPoint[0] + (nextPoint[0] - prevPoint[0]) * segmentRatio
+    const lon = prevPoint[1] + (nextPoint[1] - prevPoint[1]) * segmentRatio
+
+    // 计算航向角
+    const dx = nextPoint[1] - prevPoint[1]
+    const dy = nextPoint[0] - prevPoint[0]
+    const angle = Math.atan2(dy, dx) * 180 / Math.PI  // 转换为角度
+
+    return {
+        pos: [lat, lon],
+        angle: angle
+    }
+}
+
+const clearPlanePath = () => {
+    if (flightPath.value) {
+        flightPath.value.remove()
+        flightPath.value = null
+    }
+    if (planeMarker.value) {
+        planeMarker.value.remove()
+        planeMarker.value = null
+    }
+}
+
+const drawFlightPath = (segments) => {
+    const allPoints = segments.flatMap(seg => seg.map(p => [p.lat, p.lon]))
+    flightPath.value = L.polyline(allPoints, {
+        color: '#3b82f6',
+        weight: 3,
+        opacity: 0.7
+    }).addTo(map.value)
 }
 
 const submitPlan = async () => {
     if (!validateForm()) return
-
-    try {
-        function formatDateTime(input) {
-            const str = String(input);
-            const year = str.substring(0, 4);
-            const month = str.substring(4, 6);
-            const day = str.substring(6, 8);
-            const hour = str.substring(8, 10);
-            const minute = str.substring(10, 12);
-            return `${year}-${month}-${day} ${hour}:${minute}`;
+    const formatDateTime = (input) => {
+        const str = String(input);
+        const year = str.substring(0, 4);
+        const month = str.substring(4, 6);
+        const day = str.substring(6, 8);
+        const hour = str.substring(8, 10);
+        const minute = str.substring(10, 12);
+        return `${year}-${month}-${day} ${hour}:${minute}`;
+    }
+    const parseCoordinate = (str) => {
+        const matches = str.match(/北纬([\d.]+)，东经([\d.]+)/)
+        return {
+            lat: parseFloat(matches[1]),
+            lon: parseFloat(matches[2])
         }
-        const parseCoordinate = (str) => {
-            const matches = str.match(/北纬([\d.]+)，东经([\d.]+)/)
-            return {
-                lat: parseFloat(matches[1]),
-                lon: parseFloat(matches[2])
-            }
-        }
-        const params = {
-            start: parseCoordinate(formData.value.start),
-            end: parseCoordinate(formData.value.end),
-            start_time: formatDateTime(formData.value.start_time),
-            "mark_time": formatDateTime(formData.value.mark_time),
-            speed: formData.value.speed,
-            "time_step": 15,
-            "threshold": 0,
-            "structure_size": 5
-        }
-        let paramsJson = JSON.stringify(params);
-        console.log("发送请求：", paramsJson)
-        const response = await routeApi.calcRoute(paramsJson)
-        console.log("[submitPlan] response")
-        if (response.status === 200) {
-            console.log("收到数据：", response.data.route)
-        } else {
-            alert(`请求失败: ${response.message}`)
-        }
-    } catch (error) {
-        console.error('请求异常:', error)
+    }
+    const params = {
+        start: parseCoordinate(formData.value.start),
+        end: parseCoordinate(formData.value.end),
+        start_time: formatDateTime(formData.value.start_time),
+        "mark_time": formatDateTime(formData.value.mark_time),
+        speed: formData.value.speed,
+        "time_step": 15,
+        "threshold": 0,
+        "structure_size": 5
+    }
+    let paramsJson = JSON.stringify(params);
+    console.log("[submitPlan] send request:", paramsJson)
+    var waypoints = null;
+    const response = await routeApi.calcRoute(paramsJson)
+    if (response.status === 200) {
+        waypoints = response.data.route.waypoints
+        console.log("[submitPlan] waypoints response:", waypoints)
+    } else {
         alert('网络请求失败，请检查连接')
     }
+    const startTime = insertColonToTime(formData.value.start_time.slice(-4)) // 获取0715格式
+    const segments = splitFlightPath(waypoints, formData.value.speed, startTime)
+    console.log("[submitPlan] splitFlightPath segments:", segments)
+    clearPlanePath()
+
+    currentPathSegments.value = segments
+    const initPlaneMarker = (startPoint) => {
+        planeMarker.value = L.marker([startPoint.lat, startPoint.lon], {
+            icon: planeIcon,
+            rotationAngle: 0
+        }).addTo(map.value)
+    }
+    drawFlightPath(segments)
+    initPlaneMarker(segments[0][0])
 }
 
-// 新增清理方法
-const clearRoute = () => {
-    if (routeLine.value) routeLine.value.remove()
-    routeMarkers.value.forEach(m => m.remove())
-    routeMarkers.value = []
-    if (planeMarker.value) planeMarker.value.remove()
-    flightTimeline.value = []
+const updateFlightPosition = () => {
+    if (!planeMarker.value || !currentPathSegments.value.length) return
+
+    const currentMinutes = colonTimeToMinutes(currentTimeDisplay.value)
+    let accumulatedMinutes = colonTimeToMinutes(insertColonToTime(formData.value.start_time.slice(-4)))
+    let targetSegment = null
+    let segmentStartTime = 0
+
+    // 找到当前时间对应的路径段
+    for (const segment of currentPathSegments.value) {
+        const segmentDuration = segment.length > 1 ?
+            colonTimeToMinutes(segment[segment.length - 1].reach_time) - colonTimeToMinutes(segment[0].reach_time) :
+            0
+
+        if (currentMinutes >= accumulatedMinutes && currentMinutes <= accumulatedMinutes + segmentDuration) {
+            targetSegment = segment
+            segmentStartTime = accumulatedMinutes
+            break
+        }
+        accumulatedMinutes += segmentDuration
+    }
+
+    // 计算在段内的进度
+    if (targetSegment) {
+        const segmentProgress = currentMinutes - segmentStartTime
+        const totalDuration = colonTimeToMinutes(targetSegment[targetSegment.length - 1].reach_time) -
+            colonTimeToMinutes(targetSegment[0].reach_time)
+        const ratio = Math.min(segmentProgress / totalDuration, 1)
+
+        // 计算插值点
+        const points = targetSegment.map(p => [p.lat, p.lon])
+        const currentPoint = interpolatePoint(points, ratio)
+
+        // 更新飞机位置和方向
+        planeMarker.value.setLatLng(currentPoint.pos)
+        planeMarker.value.setRotationAngle(currentPoint.angle)
+    }
 }
-
-
-// 新增时间索引查找方法
-const findNearestTimeIndex = (targetTime) => {
-    return flightTimeline.value.findIndex(point =>
-        Math.abs(point.time - targetTime) <= 7.5 * 60 * 1000  // 7.5分钟容差
-    )
-}
-
-
-// timeStr类似"202411130745"，解析为Date对象
-const parseImageTimestamp = (timeStr) => {
-    const pattern = /(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})/
-    const [, year, month, day, hour, minute] = timeStr.match(pattern)
-    return new Date(`${year}-${month}-${day}T${hour}:${minute}:00+08:00`)
-}
-
 
 const validateForm = () => {
     if (!formData.value.start || !formData.value.end) {
@@ -352,7 +457,7 @@ function fadeOverlay(oldLayer, newLayer) {
 
         // 动画未完成时继续递归
         if (ratio < 1) {
-            animationFrame.value = requestAnimationFrame(animate);
+            animationFrameFade.value = requestAnimationFrame(animate);
         } else {
             // 动画完成后清理旧图层并更新状态
             oldLayer.remove();
@@ -361,14 +466,14 @@ function fadeOverlay(oldLayer, newLayer) {
         }
     };
     // 启动动画
-    animationFrame.value = requestAnimationFrame(animate);
+    animationFrameFade.value = requestAnimationFrame(animate);
 }
 
 watch(currentIndex, (newVal, oldVal) => {
     if (newVal === oldVal) return
 
     if (nextOverlay.value) {
-        cancelAnimationFrame(animationFrame.value)
+        cancelAnimationFrame(animationFrameFade.value)
         nextOverlay.value.remove()
     }
 
@@ -381,6 +486,8 @@ watch(currentIndex, (newVal, oldVal) => {
     }).addTo(map.value)
 
     fadeOverlay(oldLayer, nextOverlay.value)
+
+    updateFlightPosition()
 })
 
 onMounted(() => {
@@ -407,7 +514,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
     stopPlayback()
-    cancelAnimationFrame(animationFrame.value)
+    cancelAnimationFrame(animationFrameFade.value)
+    cancelAnimationFrame(animationFrameFlight.value)
     if (map.value) map.value.remove()
 })
 </script>

@@ -1,3 +1,14 @@
+export const colonTimeToMinutes = (timeStr) => {
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    return hours * 60 + minutes;
+};
+
+const formatTime = (totalMinutes) => {
+    const hours = Math.floor(totalMinutes / 60) % 24;
+    const minutes = totalMinutes % 60;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+};
+
 const haversineDistance = (lat1, lon1, lat2, lon2) => {
     const R = 6371; // 地球半径（千米）
     const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -64,87 +75,90 @@ const createSegmentsQueue = (waypoints, v) => {
     return segments;
 };
 
-const splitFlightPath = (waypoints, v) => {
+export const splitFlightPath = (waypoints, v, startTime) => {
     if (waypoints.length < 2) return [];
+    const startMinutes = colonTimeToMinutes(startTime);
     const segmentsQueue = createSegmentsQueue(waypoints, v);
     const totalFlightTime = segmentsQueue.reduce((sum, seg) => sum + seg.totalTime, 0);
-    const numChunks = Math.ceil(totalFlightTime / 15);
     const segments = [];
     let currentPosition = { ...waypoints[0] };
+    let elapsedMinutes = 0;
 
-    for (let i = 0; i < numChunks; i++) {
-        const startTime = i * 15;
-        const endTime = Math.min((i + 1) * 15, totalFlightTime);
-        const duration = endTime - startTime;
-        const currentSegmentPoints = [{ ...currentPosition }];
-        let remainingDuration = duration;
+    while (elapsedMinutes < totalFlightTime) {
+        const chunkDuration = Math.min(15, totalFlightTime - elapsedMinutes);
+        const chunkEndElapsed = elapsedMinutes + chunkDuration;
+        const currentSegmentPoints = [];
+        // 添加起点（当前飞行位置）
+        currentSegmentPoints.push({
+            lat: currentPosition.lat,
+            lon: currentPosition.lon,
+            reach_time: formatTime(startMinutes + elapsedMinutes)
+        });
 
-        while (remainingDuration > 0 && segmentsQueue.length > 0) {
+        let chunkRemaining = chunkDuration;
+
+        while (chunkRemaining > 0 && segmentsQueue.length > 0) {
             const currentSegment = segmentsQueue[0];
-            if (currentSegment.remainingTime <= remainingDuration) {
-                currentSegmentPoints.push({ ...currentSegment.end });
-                remainingDuration -= currentSegment.remainingTime;
+            const timeUsed = Math.min(currentSegment.remainingTime, chunkRemaining);
+
+            if (currentSegment.remainingTime <= timeUsed) {
+                // 消耗整个航段
+                currentSegmentPoints.push({
+                    lat: currentSegment.end.lat,
+                    lon: currentSegment.end.lon,
+                    reach_time: formatTime(startMinutes + elapsedMinutes + timeUsed)
+                });
+                chunkRemaining -= timeUsed;
+                elapsedMinutes += timeUsed;
                 segmentsQueue.shift();
                 currentPosition = { ...currentSegment.end };
             } else {
-                const distance = v * remainingDuration / 60;
+                // 分割航段
+                const distance = v * timeUsed / 60;
                 const intermediatePoint = computeDestinationPoint(
                     currentSegment.start.lat,
                     currentSegment.start.lon,
                     currentSegment.bearing,
                     distance
                 );
-                currentSegmentPoints.push(intermediatePoint);
 
-                const newDistance = haversineDistance(
-                    intermediatePoint.lat,
-                    intermediatePoint.lon,
-                    currentSegment.end.lat,
-                    currentSegment.end.lon
-                );
-                const newBearing = computeBearing(
-                    intermediatePoint.lat,
-                    intermediatePoint.lon,
-                    currentSegment.end.lat,
-                    currentSegment.end.lon
-                );
-                const newTotalTime = (newDistance / v) * 60;
+                currentSegmentPoints.push({
+                    lat: intermediatePoint.lat,
+                    lon: intermediatePoint.lon,
+                    reach_time: formatTime(startMinutes + elapsedMinutes + timeUsed)
+                });
 
+                // 更新航段（不重新计算时间）
                 segmentsQueue[0] = {
                     start: intermediatePoint,
                     end: currentSegment.end,
-                    bearing: newBearing,
-                    totalTime: newTotalTime,
-                    remainingTime: newTotalTime
+                    bearing: currentSegment.bearing,
+                    totalTime: currentSegment.totalTime,
+                    remainingTime: currentSegment.remainingTime - timeUsed
                 };
 
-                currentPosition = { ...intermediatePoint };
-                remainingDuration = 0;
+                chunkRemaining -= timeUsed;
+                elapsedMinutes += timeUsed;
+                currentPosition = intermediatePoint;
             }
         }
 
         if (currentSegmentPoints.length > 1) {
-            segments.push(currentSegmentPoints.map(p => ({ lat: p.lat, lon: p.lon })));
+            segments.push(currentSegmentPoints);
         }
     }
 
     return segments;
 };
 
-export { splitFlightPath }
 // 示例使用
-// const waypoints = [
-//     { lat: 24.833118438720703, lon: 113.4898452758789 },
-//     { lat: 25.8470458984375, lon: 116.2413558959961 },
-//     { lat: 21.48139762878418, lon: 119.02906036376953 }
-// ];
-// const v = 600; // km/h
+const waypoints = [
+    { lat: 24.833118438720703, lon: 113.4898452758789 },
+    { lat: 25.8470458984375, lon: 116.2413558959961 },
+    { lat: 21.48139762878418, lon: 119.02906036376953 }
+];
+const v = 600; // km/h
+const startTime = "07:15";
 
-// const result = splitFlightPath(waypoints, v);
-// console.log(JSON.stringify(result, null, 2));
-
-// for (const segment of result) {
-//     for (let i = 0; i < segment.length - 1; i++) {
-//         console.log(haversineDistance(segment[i].lat, segment[i].lon, segment[i + 1].lat, segment[i + 1].lon))
-//     }
-// }
+const result = splitFlightPath(waypoints, v, startTime);
+console.log(result);
