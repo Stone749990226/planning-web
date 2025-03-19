@@ -66,9 +66,9 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import startIconUrl from '@/assets/icon_start_point.png';
-import endIconUrl from '@/assets/icon_end_point.png';
 import { routeApi } from '@/api'
+import { startIcon, endIcon, planeIcon } from '@/utils/icon.js'
+import { splitFlightPath } from '@/utils/splitpath.js'
 
 const FADE_DURATION = 500
 const PLAY_INTERVAL = 2000
@@ -80,6 +80,7 @@ const animationFrame = ref(null)
 const timer = ref(null)
 
 const modules = import.meta.glob('@/assets/example/*.png', { eager: true })
+// images形如数组["/src/assets/example/202411130715.png", "/src/assets/example/202411130730.png"]
 const images = Object.keys(modules)
     .sort((a, b) => {
         const getTime = path => path.split('/').pop().slice(0, -4)
@@ -104,11 +105,13 @@ const currentTimeDisplay = computed(() => {
     return formatTime(filename.slice(0, -4).slice(-4))
 })
 
+// 图片的左上角和右下角边界
 const bounds = [
     [5.000078950553419, 72.00002117304405],
     [53.999995789308514, 137.9999788561882]
 ]
 
+// 将形如0915的字符串转为09:15
 function formatTime(timeStr) {
     return `${timeStr.slice(0, 2)}:${timeStr.slice(2)}`
 }
@@ -143,6 +146,7 @@ function stopPlayback() {
     clearInterval(timer.value)
 }
 
+// 通过坐标计算，实现 ​​“点击进度条跳转到指定位置”​ 的交互逻辑
 function handleProgressClick(event) {
     const rect = event.currentTarget.getBoundingClientRect()
     const stepWidth = rect.width / totalImages
@@ -154,27 +158,6 @@ function handleProgressClick(event) {
     if (!isPlaying.value) startPlayback()
 }
 
-function fadeOverlay(oldLayer, newLayer) {
-    let start = null
-    const animate = timestamp => {
-        if (!start) start = timestamp
-        const progress = timestamp - start
-        const ratio = Math.min(progress / FADE_DURATION, 1)
-
-        oldLayer.setOpacity(0.5 * (1 - ratio))
-        newLayer.setOpacity(0.5 * ratio)
-
-        if (ratio < 1) {
-            animationFrame.value = requestAnimationFrame(animate)
-        } else {
-            oldLayer.remove()
-            currentOverlay.value = newLayer
-            nextOverlay.value = null
-        }
-    }
-    animationFrame.value = requestAnimationFrame(animate)
-}
-
 const showPanel = ref(false)
 const mapClickHandler = ref(null)
 const markers = ref({
@@ -182,25 +165,13 @@ const markers = ref({
     end: null
 })
 
-// 表单数据
+// 路径规划请求表单数据
 const formData = ref({
     start_time: '',
     mark_time: '',
     start: '',
     end: '',
     speed: 600
-})
-
-const startIcon = L.icon({
-    iconUrl: startIconUrl,
-    iconSize: [15, 15],
-    iconAnchor: [7.5, 7.5]
-})
-
-const endIcon = L.icon({
-    iconUrl: endIconUrl,
-    iconSize: [15, 15],
-    iconAnchor: [7.5, 7.5]
 })
 
 // 计算属性
@@ -214,13 +185,13 @@ const showActions = computed(() => {
     return markers.value.start && markers.value.end
 })
 
-// 面板切换逻辑
+// 路径规划面板切换逻辑
 const togglePanel = () => {
     showPanel.value = !showPanel.value
     if (showPanel.value) {
         // 记录时间戳
         formData.value.start_time = getCurrentTimestamp()
-        formData.value.mark_time = getFirstImageTimestamp()
+        formData.value.mark_time = images[0].split('/').pop().slice(0, -4)
         // 暂停轮播
         stopPlayback()
         setupMapInteraction()
@@ -230,15 +201,10 @@ const togglePanel = () => {
     }
 }
 
-// 获取时间戳方法
+// filename类似202411130745.png，返回值为"202411130745"，即去掉".png"
 const getCurrentTimestamp = () => {
     const filename = images[currentIndex.value].split('/').pop()
     return filename.slice(0, -4)
-}
-
-const getFirstImageTimestamp = () => {
-    const firstImage = images[0].split('/').pop()
-    return firstImage.slice(0, -4)
 }
 
 // 地图交互逻辑
@@ -289,44 +255,42 @@ const clearMarkers = () => {
     formData.value.end = ''
 }
 
-// 提交逻辑
 const submitPlan = async () => {
     if (!validateForm()) return
 
     try {
         function formatDateTime(input) {
-            // 将输入转换为字符串（兼容数字输入）
             const str = String(input);
-
-            // 分解日期时间组成部分
             const year = str.substring(0, 4);
             const month = str.substring(4, 6);
             const day = str.substring(6, 8);
             const hour = str.substring(8, 10);
             const minute = str.substring(10, 12);
-
-            // 拼接成标准格式
             return `${year}-${month}-${day} ${hour}:${minute}`;
         }
-        // 转换参数格式（根据后端要求）
+        const parseCoordinate = (str) => {
+            const matches = str.match(/北纬([\d.]+)，东经([\d.]+)/)
+            return {
+                lat: parseFloat(matches[1]),
+                lon: parseFloat(matches[2])
+            }
+        }
         const params = {
             start: parseCoordinate(formData.value.start),
             end: parseCoordinate(formData.value.end),
             start_time: formatDateTime(formData.value.start_time),
-            "mark_time": formatDateTime(getFirstImageTimestamp()),
+            "mark_time": formatDateTime(formData.value.mark_time),
             speed: formData.value.speed,
             "time_step": 15,
             "threshold": 0,
             "structure_size": 5
         }
-        // 调用封装的API方法
-        const response = await routeApi.calcRoute(JSON.stringify(params))
+        let paramsJson = JSON.stringify(params);
+        console.log("发送请求：", paramsJson)
+        const response = await routeApi.calcRoute(paramsJson)
         console.log("[submitPlan] response")
-        console.log(response.data.route)
-        // 处理响应数据（根据实际返回结构）
         if (response.status === 200) {
-            console.log('路径规划成功:', response.data)
-            // 更新地图路径等操作...
+            console.log("收到数据：", response.data.route)
         } else {
             alert(`请求失败: ${response.message}`)
         }
@@ -335,14 +299,32 @@ const submitPlan = async () => {
         alert('网络请求失败，请检查连接')
     }
 }
-// 辅助方法
-const parseCoordinate = (str) => {
-    const matches = str.match(/北纬([\d.]+)，东经([\d.]+)/)
-    return {
-        lat: parseFloat(matches[1]),
-        lon: parseFloat(matches[2])
-    }
+
+// 新增清理方法
+const clearRoute = () => {
+    if (routeLine.value) routeLine.value.remove()
+    routeMarkers.value.forEach(m => m.remove())
+    routeMarkers.value = []
+    if (planeMarker.value) planeMarker.value.remove()
+    flightTimeline.value = []
 }
+
+
+// 新增时间索引查找方法
+const findNearestTimeIndex = (targetTime) => {
+    return flightTimeline.value.findIndex(point =>
+        Math.abs(point.time - targetTime) <= 7.5 * 60 * 1000  // 7.5分钟容差
+    )
+}
+
+
+// timeStr类似"202411130745"，解析为Date对象
+const parseImageTimestamp = (timeStr) => {
+    const pattern = /(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})/
+    const [, year, month, day, hour, minute] = timeStr.match(pattern)
+    return new Date(`${year}-${month}-${day}T${hour}:${minute}:00+08:00`)
+}
+
 
 const validateForm = () => {
     if (!formData.value.start || !formData.value.end) {
@@ -354,6 +336,32 @@ const validateForm = () => {
         return false
     }
     return true
+}
+
+function fadeOverlay(oldLayer, newLayer) {
+    let start = null; // 记录动画起始时间戳
+    const animate = timestamp => {
+        // 动画帧回调函数
+        if (!start) start = timestamp; // 初始化开始时间
+        const progress = timestamp - start; // 计算已过时间（毫秒）
+        const ratio = Math.min(progress / FADE_DURATION, 1); // 计算进度比例 (0~1)
+
+        // 动态调整新旧图层透明度
+        oldLayer.setOpacity(0.5 * (1 - ratio)); // 旧图层渐隐
+        newLayer.setOpacity(0.5 * ratio);       // 新图层渐显
+
+        // 动画未完成时继续递归
+        if (ratio < 1) {
+            animationFrame.value = requestAnimationFrame(animate);
+        } else {
+            // 动画完成后清理旧图层并更新状态
+            oldLayer.remove();
+            currentOverlay.value = newLayer;
+            nextOverlay.value = null;
+        }
+    };
+    // 启动动画
+    animationFrame.value = requestAnimationFrame(animate);
 }
 
 watch(currentIndex, (newVal, oldVal) => {
@@ -521,7 +529,7 @@ button.playing:hover {
 
 .plan-panel {
     position: fixed;
-    top: 20px;
+    top: 60px;
     right: -350px;
     width: 320px;
     background: rgba(255, 255, 255, 0.95);
@@ -533,6 +541,7 @@ button.playing:hover {
 
 .plan-panel.active {
     right: 20px;
+    top: 60px;
 }
 
 .panel-header {
