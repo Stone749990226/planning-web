@@ -67,6 +67,9 @@ import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import 'leaflet-rotatedmarker';
+import '@ansur/leaflet-pulse-icon/dist/L.Icon.Pulse.css';
+import '@ansur/leaflet-pulse-icon';
+import 'leaflet-ant-path';
 import { routeApi } from '@/api'
 import { startIcon, endIcon, planeIcon } from '@/utils/icon.js'
 import { colonTimeToMinutes, splitFlightPath } from '@/utils/splitpath.js'
@@ -78,7 +81,6 @@ const map = ref(null)
 const currentOverlay = ref(null)
 const nextOverlay = ref(null)
 const animationFrameFade = ref(null)
-const animationFrameFlight = ref(null)
 const timer = ref(null)
 
 const modules = import.meta.glob('@/assets/example/*.png', { eager: true })
@@ -261,55 +263,75 @@ const clearMarkers = () => {
     clearPlanePath()
 }
 
-const flightPath = ref(null)
-const planeMarker = ref(null)
-const currentPathSegments = ref([])
-const interpolatePoint = (points, ratio) => {
-    if (points.length < 2 || ratio <= 0) return { pos: points[0], angle: 0 }
-    if (ratio >= 1) return { pos: points[points.length - 1], angle: 0 }
-
-    const totalLength = points.length - 1
-    const exactIndex = ratio * totalLength
-    const index = Math.floor(exactIndex)
-    const segmentRatio = exactIndex - index
-
-    const prevPoint = points[index]
-    const nextPoint = points[index + 1]
-
-    // 计算中间点
-    const lat = prevPoint[0] + (nextPoint[0] - prevPoint[0]) * segmentRatio
-    const lon = prevPoint[1] + (nextPoint[1] - prevPoint[1]) * segmentRatio
-
-    // 计算航向角
-    const dx = nextPoint[1] - prevPoint[1]
-    const dy = nextPoint[0] - prevPoint[0]
-    const angle = Math.atan2(dy, dx) * 180 / Math.PI  // 转换为角度
-
-    return {
-        pos: [lat, lon],
-        angle: angle
-    }
-}
-
+const flightPaths = ref([])
+const pulseMarkers = ref([])
 const clearPlanePath = () => {
-    if (flightPath.value) {
-        flightPath.value.remove()
-        flightPath.value = null
-    }
-    if (planeMarker.value) {
-        planeMarker.value.remove()
-        planeMarker.value = null
-    }
+    // 清除所有路径
+    flightPaths.value.forEach(path => map.value.removeLayer(path))
+    flightPaths.value = []
+
+    // 清除标记
+    pulseMarkers.value.forEach(marker => marker.remove())
+    pulseMarkers.value = []
 }
 
 const drawFlightPath = (segments) => {
-    const allPoints = segments.flatMap(seg => seg.map(p => [p.lat, p.lon]))
-    flightPath.value = L.polyline(allPoints, {
-        color: '#3b82f6',
-        weight: 3,
-        opacity: 0.7
-    }).addTo(map.value)
-}
+    clearPlanePath()
+
+    // 绘制分段路径（美化样式）
+    segments.forEach((segment) => {
+        const points = segment.map(p => [p.lat, p.lon]);
+        const path = L.polyline.antPath(points, {
+            color: "#6CB4EE",       // 主色：浅天空蓝
+            pulseColor: "#B0E2FF",  // 脉冲色：更浅的婴儿蓝
+            weight: 4,
+            dashArray: [10, 20], // 红白间隔：10px红色实线 + 20px白色间隔
+            opacity: 0.8,
+            delay: 1000,        // 动画速度
+            interactive: false  // 提升性能
+        }).addTo(map.value);
+        flightPaths.value.push(path)
+    });
+
+    // 绘制端点标记（去重）
+    const uniqueEndpoints = new Set();
+
+    segments.forEach(segment => {
+        const start = segment[0];
+        const end = segment[segment.length - 1];
+
+        // 生成唯一标识
+        const startKey = `${start.lat},${start.lon}`;
+        const endKey = `${end.lat},${end.lon}`;
+
+        // 添加脉冲标记（使用插件）
+        if (!uniqueEndpoints.has(startKey)) {
+            var pulseIcon = L.icon.pulse({
+                iconSize: [8, 8],
+                color: 'white',
+                fillColor: 'white',
+                heartbeat: 1.5,
+                animate: true
+            });
+            var marker = L.marker([start.lat, start.lon], { icon: pulseIcon }).addTo(map.value);
+            pulseMarkers.value.push(marker);
+            uniqueEndpoints.add(startKey);
+        }
+
+        if (!uniqueEndpoints.has(endKey)) {
+            var pulseIcon = L.icon.pulse({
+                iconSize: [8, 8],
+                color: 'white', // 终点用红色增强视觉效果
+                fillColor: 'white',
+                heartbeat: 1.5,
+                animate: true
+            });
+            var marker = L.marker([end.lat, end.lon], { icon: pulseIcon }).addTo(map.value);
+            pulseMarkers.value.push(marker);
+            uniqueEndpoints.add(endKey);
+        }
+    });
+};
 
 const submitPlan = async () => {
     if (!validateForm()) return
@@ -353,9 +375,6 @@ const submitPlan = async () => {
     const segments = splitFlightPath(waypoints, formData.value.speed, startTime)
     console.log("[submitPlan] splitFlightPath segments:", segments)
     clearPlanePath()
-
-    currentPathSegments.value = segments
-
     drawFlightPath(segments)
     // 动画执行函数
     async function animateFlight(segments) {
@@ -414,45 +433,6 @@ const submitPlan = async () => {
     startPlayback()
 }
 
-const updateFlightPosition = () => {
-    if (!planeMarker.value || !currentPathSegments.value.length) return
-
-    const currentMinutes = colonTimeToMinutes(currentTimeDisplay.value)
-    let accumulatedMinutes = colonTimeToMinutes(insertColonToTime(formData.value.start_time.slice(-4)))
-    let targetSegment = null
-    let segmentStartTime = 0
-
-    // 找到当前时间对应的路径段
-    for (const segment of currentPathSegments.value) {
-        const segmentDuration = segment.length > 1 ?
-            colonTimeToMinutes(segment[segment.length - 1].reach_time) - colonTimeToMinutes(segment[0].reach_time) :
-            0
-
-        if (currentMinutes >= accumulatedMinutes && currentMinutes <= accumulatedMinutes + segmentDuration) {
-            targetSegment = segment
-            segmentStartTime = accumulatedMinutes
-            break
-        }
-        accumulatedMinutes += segmentDuration
-    }
-
-    // 计算在段内的进度
-    if (targetSegment) {
-        const segmentProgress = currentMinutes - segmentStartTime
-        const totalDuration = colonTimeToMinutes(targetSegment[targetSegment.length - 1].reach_time) -
-            colonTimeToMinutes(targetSegment[0].reach_time)
-        const ratio = Math.min(segmentProgress / totalDuration, 1)
-
-        // 计算插值点
-        const points = targetSegment.map(p => [p.lat, p.lon])
-        const currentPoint = interpolatePoint(points, ratio)
-
-        // 更新飞机位置和方向
-        planeMarker.value.setLatLng(currentPoint.pos)
-        planeMarker.value.setRotationAngle(currentPoint.angle)
-    }
-}
-
 const validateForm = () => {
     if (!formData.value.start || !formData.value.end) {
         alert('请先标记起点和终点')
@@ -508,8 +488,6 @@ watch(currentIndex, (newVal, oldVal) => {
     }).addTo(map.value)
 
     fadeOverlay(oldLayer, nextOverlay.value)
-
-    updateFlightPosition()
 })
 
 onMounted(() => {
@@ -537,7 +515,6 @@ onMounted(() => {
 onBeforeUnmount(() => {
     stopPlayback()
     cancelAnimationFrame(animationFrameFade.value)
-    cancelAnimationFrame(animationFrameFlight.value)
     if (map.value) map.value.remove()
 })
 </script>
