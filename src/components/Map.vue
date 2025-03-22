@@ -136,6 +136,7 @@ function togglePlayback() {
 
 function startPlayback() {
     isPlaying.value = true
+    clearInterval(timer.value)
     timer.value = setInterval(() => {
         if (currentIndex.value < totalImages - 1) {
             currentIndex.value++
@@ -235,14 +236,14 @@ const clearMapInteraction = () => {
 // 标记处理
 const setStartMarker = (latlng) => {
     if (markers.value.start) markers.value.start.remove()
-    markers.value.start = L.marker(latlng, { icon: startIcon })
+    markers.value.start = L.marker(latlng, { icon: startIcon, zIndexOffset: 10 })
         .addTo(map.value)
     updateFormData('start', latlng)
 }
 
 const setEndMarker = (latlng) => {
     if (markers.value.end) markers.value.end.remove()
-    markers.value.end = L.marker(latlng, { icon: endIcon })
+    markers.value.end = L.marker(latlng, { icon: endIcon, zIndexOffset: 10 })
         .addTo(map.value)
     updateFormData('end', latlng)
 }
@@ -293,44 +294,55 @@ const drawFlightPath = (segments) => {
         flightPaths.value.push(path)
     });
 
-    // 绘制端点标记（去重）
-    const uniqueEndpoints = new Set();
+    // 获取全局起点和终点坐标（用于过滤）
+    const globalStart = segments[0][0]
+    const globalEnd = segments[segments.length - 1][segments[segments.length - 1].length - 1]
+    const globalStartKey = `${globalStart.lat},${globalStart.lon}`
+    const globalEndKey = `${globalEnd.lat},${globalEnd.lon}`
+
+    // 绘制中间节点脉冲（过滤首尾）
+    const uniqueEndpoints = new Set()
 
     segments.forEach(segment => {
-        const start = segment[0];
-        const end = segment[segment.length - 1];
+        const start = segment[0]
+        const end = segment[segment.length - 1]
 
-        // 生成唯一标识
-        const startKey = `${start.lat},${start.lon}`;
-        const endKey = `${end.lat},${end.lon}`;
+        // 生成坐标唯一键
+        const startKey = `${start.lat},${start.lon}`
+        const endKey = `${end.lat},${end.lon}`
 
-        // 添加脉冲标记（使用插件）
+        // 跳过全局起点和终点
+        if (startKey === globalStartKey || startKey === globalEndKey) return
+        if (endKey === globalStartKey || endKey === globalEndKey) return
+
+        // 添加中间节点脉冲
         if (!uniqueEndpoints.has(startKey)) {
-            var pulseIcon = L.icon.pulse({
+
+            const pulseIcon = L.icon.pulse({
                 iconSize: [8, 8],
                 color: 'white',
                 fillColor: 'white',
                 heartbeat: 1.5,
                 animate: true
-            });
-            var marker = L.marker([start.lat, start.lon], { icon: pulseIcon }).addTo(map.value);
-            pulseMarkers.value.push(marker);
-            uniqueEndpoints.add(startKey);
+            })
+            const marker = L.marker([start.lat, start.lon], { icon: pulseIcon }).addTo(map.value)
+            pulseMarkers.value.push(marker)
+            uniqueEndpoints.add(startKey)
         }
 
         if (!uniqueEndpoints.has(endKey)) {
-            var pulseIcon = L.icon.pulse({
+            const pulseIcon = L.icon.pulse({
                 iconSize: [8, 8],
-                color: 'white', // 终点用红色增强视觉效果
+                color: 'white',
                 fillColor: 'white',
                 heartbeat: 1.5,
                 animate: true
-            });
-            var marker = L.marker([end.lat, end.lon], { icon: pulseIcon }).addTo(map.value);
-            pulseMarkers.value.push(marker);
-            uniqueEndpoints.add(endKey);
+            })
+            const marker = L.marker([end.lat, end.lon], { icon: pulseIcon }).addTo(map.value)
+            pulseMarkers.value.push(marker)
+            uniqueEndpoints.add(endKey)
         }
-    });
+    })
 };
 
 const submitPlan = async () => {
@@ -378,7 +390,7 @@ const submitPlan = async () => {
     drawFlightPath(segments)
     // 动画执行函数
     async function animateFlight(segments) {
-        markers.value.plane = L.marker([segments[0][0].lat, segments[0][0].lon], { icon: planeIcon }).addTo(map.value);
+        markers.value.plane = L.marker([segments[0][0].lat, segments[0][0].lon], { icon: planeIcon, zIndexOffset: 11 }).addTo(map.value);
 
         for (const [index, segment] of segments.entries()) {
             // 计算段持续时间
