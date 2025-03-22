@@ -129,7 +129,6 @@ function togglePlayback() {
     } else {
         if (isLastImage.value) currentIndex.value = 0
         startPlayback()
-        startFlightAnimation()
     }
 }
 
@@ -149,29 +148,6 @@ function stopPlayback() {
     clearInterval(timer.value)
 }
 
-const startFlightAnimation = () => {
-    cancelAnimationFrame(animationFrameFlight.value)
-    animationStartTime.value = performance.now()
-    currentProgress.value = 0
-
-    const animate = (timestamp) => {
-        const elapsed = timestamp - animationStartTime.value
-        currentProgress.value = Math.min(elapsed / PLAY_INTERVAL, 1)
-
-        updateFlightPosition(currentProgress.value)
-
-        if (currentProgress.value < 1) {
-            animationFrameFlight.value = requestAnimationFrame(animate)
-        } else {
-            currentIndex.value = Math.min(currentIndex.value + 1, totalImages - 1)
-            if (currentIndex.value < totalImages - 1) {
-                startFlightAnimation()
-            }
-        }
-    }
-
-    animationFrameFlight.value = requestAnimationFrame(animate)
-}
 
 // 通过坐标计算，实现 ​​“点击进度条跳转到指定位置”​ 的交互逻辑
 function handleProgressClick(event) {
@@ -183,14 +159,14 @@ function handleProgressClick(event) {
     )
     currentIndex.value = clickedIndex
     if (!isPlaying.value) startPlayback()
-    updateFlightPosition()
 }
 
 const showPanel = ref(false)
 const mapClickHandler = ref(null)
 const markers = ref({
     start: null,
-    end: null
+    end: null,
+    plane: null,
 })
 
 // 路径规划请求表单数据
@@ -278,7 +254,8 @@ const updateFormData = (type, latlng) => {
 const clearMarkers = () => {
     if (markers.value.start) markers.value.start.remove()
     if (markers.value.end) markers.value.end.remove()
-    markers.value = { start: null, end: null }
+    if (markers.value.plane) markers.value.plane.remove()
+    markers.value = { start: null, end: null, plane: null }
     formData.value.start = ''
     formData.value.end = ''
     clearPlanePath()
@@ -287,10 +264,6 @@ const clearMarkers = () => {
 const flightPath = ref(null)
 const planeMarker = ref(null)
 const currentPathSegments = ref([])
-const currentTrajectory = ref([])
-const isFlying = ref(false)
-const animationStartTime = ref(0)
-const currentProgress = ref(0)
 const interpolatePoint = (points, ratio) => {
     if (points.length < 2 || ratio <= 0) return { pos: points[0], angle: 0 }
     if (ratio >= 1) return { pos: points[points.length - 1], angle: 0 }
@@ -382,14 +355,63 @@ const submitPlan = async () => {
     clearPlanePath()
 
     currentPathSegments.value = segments
-    const initPlaneMarker = (startPoint) => {
-        planeMarker.value = L.marker([startPoint.lat, startPoint.lon], {
-            icon: planeIcon,
-            rotationAngle: 0
-        }).addTo(map.value)
-    }
+
     drawFlightPath(segments)
-    initPlaneMarker(segments[0][0])
+    // 动画执行函数
+    async function animateFlight(segments) {
+        markers.value.plane = L.marker([segments[0][0].lat, segments[0][0].lon], { icon: planeIcon }).addTo(map.value);
+
+        for (const [index, segment] of segments.entries()) {
+            // 计算段持续时间
+            const isLastSegment = index === segments.length - 1;
+            const startTime = segment[0].reach_time;
+            const endTime = segment[segment.length - 1].reach_time;
+            const durationMinutes = colonTimeToMinutes(endTime) - colonTimeToMinutes(startTime);
+            const animationDuration = isLastSegment
+                ? (durationMinutes / 15) * 2000  // 最后一段按比例计算
+                : 2000;                         // 常规段固定2秒
+
+            // 处理段内每个路径点
+            for (let i = 0; i < segment.length - 1; i++) {
+                const startPoint = segment[i];
+                const endPoint = segment[i + 1];
+
+                // 更新飞机方向
+                markers.value.plane.setLatLng([startPoint.lat, startPoint.lon]);
+                markers.value.plane.setRotationAngle(startPoint.bearing);
+
+                // 计算段内小段时间
+                const segmentDuration = colonTimeToMinutes(endPoint.reach_time) - colonTimeToMinutes(startPoint.reach_time);
+                const segmentAnimationDuration = (segmentDuration / durationMinutes) * animationDuration;
+
+                // 执行动画
+                await new Promise(resolve => {
+                    const startLatLng = [startPoint.lat, startPoint.lon];
+                    const endLatLng = [endPoint.lat, endPoint.lon];
+                    const startTime = Date.now();
+
+                    const animate = () => {
+                        const progress = (Date.now() - startTime) / segmentAnimationDuration;
+                        if (progress >= 1) {
+                            markers.value.plane.setLatLng(endLatLng);
+                            return resolve();
+                        }
+
+                        const currentLat = startLatLng[0] + (endLatLng[0] - startLatLng[0]) * progress;
+                        const currentLon = startLatLng[1] + (endLatLng[1] - startLatLng[1]) * progress;
+                        markers.value.plane.setLatLng([currentLat, currentLon]);
+                        requestAnimationFrame(animate);
+                    };
+
+                    animate();
+                });
+            }
+        }
+    }
+
+    // 启动动画
+    animateFlight(segments);
+    startPlayback()
 }
 
 const updateFlightPosition = () => {

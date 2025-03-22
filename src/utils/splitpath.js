@@ -86,9 +86,7 @@ export const splitFlightPath = (waypoints, v, startTime) => {
 
     while (elapsedMinutes < totalFlightTime) {
         const chunkDuration = Math.min(15, totalFlightTime - elapsedMinutes);
-        const chunkEndElapsed = elapsedMinutes + chunkDuration;
         const currentSegmentPoints = [];
-        // 添加起点（当前飞行位置）
         currentSegmentPoints.push({
             lat: currentPosition.lat,
             lon: currentPosition.lon,
@@ -102,7 +100,6 @@ export const splitFlightPath = (waypoints, v, startTime) => {
             const timeUsed = Math.min(currentSegment.remainingTime, chunkRemaining);
 
             if (currentSegment.remainingTime <= timeUsed) {
-                // 消耗整个航段
                 currentSegmentPoints.push({
                     lat: currentSegment.end.lat,
                     lon: currentSegment.end.lon,
@@ -113,7 +110,6 @@ export const splitFlightPath = (waypoints, v, startTime) => {
                 segmentsQueue.shift();
                 currentPosition = { ...currentSegment.end };
             } else {
-                // 分割航段
                 const distance = v * timeUsed / 60;
                 const intermediatePoint = computeDestinationPoint(
                     currentSegment.start.lat,
@@ -121,14 +117,11 @@ export const splitFlightPath = (waypoints, v, startTime) => {
                     currentSegment.bearing,
                     distance
                 );
-
                 currentSegmentPoints.push({
                     lat: intermediatePoint.lat,
                     lon: intermediatePoint.lon,
                     reach_time: formatTime(startMinutes + elapsedMinutes + timeUsed)
                 });
-
-                // 更新航段（不重新计算时间）
                 segmentsQueue[0] = {
                     start: intermediatePoint,
                     end: currentSegment.end,
@@ -136,7 +129,6 @@ export const splitFlightPath = (waypoints, v, startTime) => {
                     totalTime: currentSegment.totalTime,
                     remainingTime: currentSegment.remainingTime - timeUsed
                 };
-
                 chunkRemaining -= timeUsed;
                 elapsedMinutes += timeUsed;
                 currentPosition = intermediatePoint;
@@ -144,13 +136,25 @@ export const splitFlightPath = (waypoints, v, startTime) => {
         }
 
         if (currentSegmentPoints.length > 1) {
+            // 为每个点添加 bearing 属性
+            for (let i = 0; i < currentSegmentPoints.length; i++) {
+                if (i < currentSegmentPoints.length - 1) {
+                    // 计算当前点到下一个点的方向角
+                    const start = currentSegmentPoints[i];
+                    const end = currentSegmentPoints[i + 1];
+                    const bearing = computeBearing(start.lat, start.lon, end.lat, end.lon);
+                    currentSegmentPoints[i].bearing = bearing;
+                } else {
+                    // 最后一个点：方向角与前一个点相同
+                    currentSegmentPoints[i].bearing = currentSegmentPoints[i - 1].bearing;
+                }
+            }
             segments.push(currentSegmentPoints);
         }
     }
 
     return segments;
 };
-
 // 示例使用
 const waypoints = [
     { lat: 24.833118438720703, lon: 113.4898452758789 },
