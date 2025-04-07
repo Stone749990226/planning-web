@@ -317,7 +317,6 @@ const drawFlightPath = (segments) => {
 
         // 添加中间节点脉冲
         if (!uniqueEndpoints.has(startKey)) {
-
             const pulseIcon = L.icon.pulse({
                 iconSize: [8, 8],
                 color: 'white',
@@ -325,7 +324,12 @@ const drawFlightPath = (segments) => {
                 heartbeat: 1.5,
                 animate: true
             })
-            const marker = L.marker([start.lat, start.lon], { icon: pulseIcon }).addTo(map.value)
+            const marker = L.marker([start.lat, start.lon], { icon: pulseIcon }).bindTooltip(`坐标：${start.lat.toFixed(4)}, ${start.lon.toFixed(4)}<br>到达时间：${start.reach_time}`, {
+                direction: 'top',     // 提示方向（可选：top/bottom/left/right）
+                offset: [0, -10],     // 调整提示位置（向上偏移10px）
+                permanent: false,     // 仅悬停时显示（默认值可省略）
+                className: 'pulse-tooltip' // 自定义样式类名（可选）
+            }).addTo(map.value)
             pulseMarkers.value.push(marker)
             uniqueEndpoints.add(startKey)
         }
@@ -338,7 +342,12 @@ const drawFlightPath = (segments) => {
                 heartbeat: 1.5,
                 animate: true
             })
-            const marker = L.marker([end.lat, end.lon], { icon: pulseIcon }).addTo(map.value)
+            const marker = L.marker([end.lat, end.lon], { icon: pulseIcon }).bindTooltip(`坐标：${start.lat.toFixed(4)}, ${start.lon.toFixed(4)}<br>到达时间：${start.reach_time}`, {
+                direction: 'top',     // 提示方向（可选：top/bottom/left/right）
+                offset: [0, -10],     // 调整提示位置（向上偏移10px）
+                permanent: false,     // 仅悬停时显示（默认值可省略）
+                className: 'pulse-tooltip' // 自定义样式类名（可选）
+            }).addTo(map.value)
             pulseMarkers.value.push(marker)
             uniqueEndpoints.add(endKey)
         }

@@ -1,7 +1,7 @@
 import startIconUrl from '@/assets/icon_start_point.png';
 import endIconUrl from '@/assets/icon_end_point.png';
 import planeIconUrl from '@/assets/icon_plane.png'  // 新增飞机图标
-const PLANE_ICON_SIZE = 20
+const PLANE_ICON_SIZE = 40
 const PLANE_ICON_ANCHOR = PLANE_ICON_SIZE / 2
 
 const planeIcon = L.icon({
