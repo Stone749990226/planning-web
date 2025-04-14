@@ -97,6 +97,7 @@ import { routeApi } from '@/api'
 import { startIcon, endIcon, planeIcon } from '@/utils/icon.js'
 import { colonTimeToMinutes, splitFlightPath } from '@/utils/splitpath.js'
 import geoData from '@/assets/json/guangdong_geo.json'
+import { guangdongCities, chinaCities } from "@/utils/city-coordinates.js"
 const FADE_DURATION = 500
 const PLAY_INTERVAL = 2000
 
@@ -593,17 +594,36 @@ onMounted(() => {
     L.tileLayer('http://49.233.204.126:18889/wind/{z}/{x}/{y}.png').addTo(map.value)
 
     L.geoJSON(geoData, {
-        style: {
+        "style": {
             color: 'rgba(139, 0, 0, 0.4)',  // 深红色 + 60%透明度
             weight: 2,                      // 边框粗细
             opacity: 0.2,                   // 边框整体透明度
             fill: false,                    // 禁用填充
-
-        }, pointToLayer: function (feature, latlng) {
+        },
+        "pointToLayer": function (feature, latlng) {
             return null // 返回null则不创建任何图层
         },
     }).addTo(map.value)
 
+    const createTextMarker = (cityName, coord) => {
+        return L.marker([coord[1], coord[0]], {
+            icon: L.divIcon({
+                className: 'text-marker',  // 自定义class名称
+                html: `${cityName}`,  // 显示文字内容
+                iconSize: 30
+            })
+        })
+    }
+
+    // 添加广东城市标签
+    Object.entries(guangdongCities).forEach(([city, coord]) => {
+        createTextMarker(city, coord).addTo(map.value)
+    })
+
+    // 添加全国其他城市标签（可选）
+    // Object.entries(chinaCities).forEach(([city, coord]) => {
+    //     createTextMarker(city, coord).addTo(map.value)
+    // })
     currentOverlay.value = L.imageOverlay(preloadedImages[0].src, bounds, {
         opacity: 0.5,
         minZoom: 5,
@@ -911,5 +931,14 @@ h1 {
     color: rgba(255, 255, 255, 0.9);
     font-size: 0.9em;
     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.text-marker {
+    font-family: "Microsoft YaHei";
+    /* 微软雅黑 */
+    font-size: 10px;
+    color: rgba(51, 51, 51, 0);
+    font-weight: 1000;
+    white-space: nowrap;
 }
 </style>
