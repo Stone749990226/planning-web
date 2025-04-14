@@ -68,7 +68,7 @@
     <button class="plan-trigger" @click="togglePanel">Plan</button>
 
     <div class="datetime-picker">
-        <el-date-picker v-model="selectDate" style="width: 150px" type="date" placeholder="请选择日期" :size="size" />
+        <el-date-picker v-model="selectDate" style="width: 150px" type="date" placeholder="请选择日期" />
         <el-time-select v-model="selectTime" style="width: 150px" start="00:00" step="00:15" end="23:45"
             placeholder="请选择时间" />
     </div>
@@ -96,7 +96,7 @@ import 'leaflet-ant-path';
 import { routeApi } from '@/api'
 import { startIcon, endIcon, planeIcon } from '@/utils/icon.js'
 import { colonTimeToMinutes, splitFlightPath } from '@/utils/splitpath.js'
-
+import geoData from '@/assets/json/guangdong_geo.json'
 const FADE_DURATION = 500
 const PLAY_INTERVAL = 2000
 
@@ -591,6 +591,18 @@ onMounted(() => {
     })
 
     L.tileLayer('http://49.233.204.126:18889/wind/{z}/{x}/{y}.png').addTo(map.value)
+
+    L.geoJSON(geoData, {
+        style: {
+            color: 'rgba(139, 0, 0, 0.4)',  // 深红色 + 60%透明度
+            weight: 2,                      // 边框粗细
+            opacity: 0.2,                   // 边框整体透明度
+            fill: false,                    // 禁用填充
+
+        }, pointToLayer: function (feature, latlng) {
+            return null // 返回null则不创建任何图层
+        },
+    }).addTo(map.value)
 
     currentOverlay.value = L.imageOverlay(preloadedImages[0].src, bounds, {
         opacity: 0.5,
