@@ -72,6 +72,17 @@
         <el-time-select v-model="selectTime" style="width: 150px" start="00:00" step="00:15" end="23:45"
             placeholder="请选择时间" />
     </div>
+
+    <!-- 左侧定位的刻度条容器 -->
+    <div class="color-legend">
+        <!-- 遍历反转后的色阶数据 -->
+        <div v-for="item in satellite" :key="item.text" class="legend-item">
+            <!-- 颜色块 -->
+            <div class="color-block" :style="{ backgroundColor: item.color }"></div>
+            <!-- 右侧文字 -->
+            <span class="text-label">{{ item.text }}</span>
+        </div>
+    </div>
 </template>
 
 <script setup>
@@ -97,6 +108,49 @@ const timer = ref(null)
 
 const selectDate = ref(null)
 const selectTime = ref(null)
+
+const satellite = [
+    {
+        "color": "rgb(176, 23, 31)",
+        "text": "230"
+    },
+    {
+        "color": "rgb(227, 23, 13)",
+        "text": "225"
+    },
+    {
+        "color": "rgb(255, 0, 0)",
+        "text": "220"
+    },
+    {
+        "color": "rgb(255, 153, 18)",
+        "text": "215"
+    },
+    {
+        "color": "rgb(227, 207, 87)",
+        "text": "210"
+    },
+    {
+        "color": "rgb(255, 255, 0)",
+        "text": "205"
+    },
+    {
+        "color": "rgb(56, 94, 15)",
+        "text": "200"
+    },
+    {
+        "color": "rgb(0, 255, 0)",
+        "text": "195"
+    },
+    {
+        "color": "rgb(30, 144, 255)",
+        "text": "190"
+    },
+    {
+        "color": "rgba(0, 0, 0, 0)",
+        "text": "min"
+    }
+];
 
 const modules = import.meta.glob('@/assets/example/*.png', { eager: true })
 // images形如数组["/src/assets/example/202411130715.png", "/src/assets/example/202411130730.png"]
@@ -807,5 +861,43 @@ h1 {
     padding: 10px;
     border-radius: 4px;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+.color-legend {
+    position: fixed;
+    left: 20px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 60px;
+    background: rgba(0, 0, 0, 0.6);
+    /* 半透明黑色背景 */
+    border-radius: 8px;
+    padding: 12px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    z-index: 1000;
+}
+
+.legend-item {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    height: 30px;
+    /* 固定高度替代min-height */
+}
+
+.color-block {
+    width: 25px;
+    height: 30px;
+    /* 改用固定高度 */
+    border-radius: 3px;
+    margin-right: 8px;
+}
+
+.text-label {
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.9em;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
 }
 </style>
