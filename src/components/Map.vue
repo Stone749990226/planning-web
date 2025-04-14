@@ -29,7 +29,7 @@
     <div class="plan-panel" :class="{ active: showPanel }">
         <div class="panel-header">
             <h3>路径规划</h3>
-            <button class="close-btn" @click="togglePanel">×</button>
+            <button class="close-btn" @click="togglePanel"></button>
         </div>
 
         <div class="panel-content">
@@ -67,6 +67,11 @@
     <!-- Plan按钮 -->
     <button class="plan-trigger" @click="togglePanel">Plan</button>
 
+    <div class="datetime-picker">
+        <el-date-picker v-model="selectDate" style="width: 150px" type="date" placeholder="请选择日期" :size="size" />
+        <el-time-select v-model="selectTime" style="width: 150px" start="00:00" step="00:15" end="23:45"
+            placeholder="请选择时间" />
+    </div>
 </template>
 
 <script setup>
@@ -89,6 +94,9 @@ const currentOverlay = ref(null)
 const nextOverlay = ref(null)
 const animationFrameFade = ref(null)
 const timer = ref(null)
+
+const selectDate = ref(null)
+const selectTime = ref(null)
 
 const modules = import.meta.glob('@/assets/example/*.png', { eager: true })
 // images形如数组["/src/assets/example/202411130715.png", "/src/assets/example/202411130730.png"]
@@ -788,5 +796,16 @@ h1 {
     font-size: 22px;
     margin: 0;
     white-space: nowrap;
+}
+
+.datetime-picker {
+    position: absolute;
+    left: 20px;
+    bottom: 20px;
+    z-index: 1000;
+    background: rgba(255, 255, 255, 0.9);
+    padding: 10px;
+    border-radius: 4px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
 }
 </style>
