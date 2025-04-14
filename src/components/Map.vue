@@ -1,4 +1,10 @@
 <template>
+    <div class="banner">
+        <div class="banner-content">
+            <img class="icon" src="@/assets/HIT.svg" alt="logo">
+            <h1>气象灾害感知的无人机路径规划系统设计与实现</h1>
+        </div>
+    </div>
     <div id="map-container"></div>
     <!-- 进度条面板 -->
     <div class="controls">
@@ -60,6 +66,7 @@
 
     <!-- Plan按钮 -->
     <button class="plan-trigger" @click="togglePanel">Plan</button>
+
 </template>
 
 <script setup>
@@ -313,7 +320,7 @@ const drawFlightPath = (segments) => {
 
         // 跳过全局起点和终点
         if (startKey === globalStartKey || startKey === globalEndKey) return
-        if (endKey === globalStartKey || endKey === globalEndKey) return
+        // if (endKey === globalStartKey || endKey === globalEndKey) return
 
         // 添加中间节点脉冲
         if (!uniqueEndpoints.has(startKey)) {
@@ -325,32 +332,32 @@ const drawFlightPath = (segments) => {
                 animate: true
             })
             const marker = L.marker([start.lat, start.lon], { icon: pulseIcon }).bindTooltip(`坐标：${start.lat.toFixed(4)}, ${start.lon.toFixed(4)}<br>到达时间：${start.reach_time}`, {
-                direction: 'top',     // 提示方向（可选：top/bottom/left/right）
-                offset: [0, -10],     // 调整提示位置（向上偏移10px）
-                permanent: false,     // 仅悬停时显示（默认值可省略）
-                className: 'pulse-tooltip' // 自定义样式类名（可选）
+                direction: 'top',
+                offset: [0, -10],
+                permanent: false,
+                className: 'pulse-tooltip'
             }).addTo(map.value)
             pulseMarkers.value.push(marker)
             uniqueEndpoints.add(startKey)
         }
 
-        if (!uniqueEndpoints.has(endKey)) {
-            const pulseIcon = L.icon.pulse({
-                iconSize: [8, 8],
-                color: 'white',
-                fillColor: 'white',
-                heartbeat: 1.5,
-                animate: true
-            })
-            const marker = L.marker([end.lat, end.lon], { icon: pulseIcon }).bindTooltip(`坐标：${start.lat.toFixed(4)}, ${start.lon.toFixed(4)}<br>到达时间：${start.reach_time}`, {
-                direction: 'top',     // 提示方向（可选：top/bottom/left/right）
-                offset: [0, -10],     // 调整提示位置（向上偏移10px）
-                permanent: false,     // 仅悬停时显示（默认值可省略）
-                className: 'pulse-tooltip' // 自定义样式类名（可选）
-            }).addTo(map.value)
-            pulseMarkers.value.push(marker)
-            uniqueEndpoints.add(endKey)
-        }
+        // if (!uniqueEndpoints.has(endKey)) {
+        //     const pulseIcon = L.icon.pulse({
+        //         iconSize: [8, 8],
+        //         color: 'white',
+        //         fillColor: 'white',
+        //         heartbeat: 1.5,
+        //         animate: true
+        //     })
+        //     const marker = L.marker([end.lat, end.lon], { icon: pulseIcon }).bindTooltip(`坐标：${start.lat.toFixed(4)}, ${start.lon.toFixed(4)}<br>到达时间：${start.reach_time}`, {
+        //         direction: 'top',
+        //         offset: [0, -10],
+        //         permanent: false,
+        //         className: 'pulse-tooltip'
+        //     }).addTo(map.value)
+        //     pulseMarkers.value.push(marker)
+        //     uniqueEndpoints.add(endKey)
+        // }
     })
 };
 
@@ -542,11 +549,15 @@ onBeforeUnmount(() => {
 
 <style scoped>
 #map-container {
-    height: 100vh;
+    height: calc(100vh - 60px);
+    /* 减去banner高度 */
     width: 100vw;
     position: absolute;
-    top: 0;
+    top: 60px;
+    /* 下移banner的高度 */
     left: 0;
+    z-index: 1;
+    /* 确保地图在下方 */
     background: #f0f2f5;
 }
 
@@ -743,5 +754,39 @@ button.playing:hover {
     background: #3b82f6;
     color: white;
     z-index: 1000;
+}
+
+.banner {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    /* 必须的定位属性 */
+    z-index: 2;
+    /* 确保在map-container之上 */
+    height: 60px;
+    background-color: #66b1ff;
+    padding: 0 20px;
+    align-items: center;
+}
+
+.banner-content {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 0 20px;
+}
+
+.icon {
+    width: 40px;
+    /* 根据实际图标尺寸调整 */
+    height: 40px;
+    fill: white;
+}
+
+h1 {
+    color: white;
+    font-size: 22px;
+    margin: 0;
+    white-space: nowrap;
 }
 </style>
