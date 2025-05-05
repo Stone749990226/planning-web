@@ -3,6 +3,7 @@ import vue from '@vitejs/plugin-vue'
 import path from 'path'
 
 export default defineConfig({
+  base: './', // 关键配置！确保所有资源路径改为相对路径
   plugins: [vue()],
   resolve: {
     alias: {
@@ -12,5 +13,12 @@ export default defineConfig({
   },
   server: {
     port: 5200
-  }
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        assetFileNames: 'assets/[name]-[hash][extname]'
+      }
+    }
+  },
 })

@@ -153,14 +153,18 @@ const satellite = [
     }
 ];
 
+const getTime = path => {
+    const filename = path.split('/').pop();
+    const match = filename.match(/^\d{12}/);
+    if (!match) throw new Error(`无效文件名格式: ${filename}`);
+    return match[0];
+};
+
 const modules = import.meta.glob('@/assets/example/*.png', { eager: true })
 // images形如数组["/src/assets/example/202411130715.png", "/src/assets/example/202411130730.png"]
 const images = Object.keys(modules)
-    .sort((a, b) => {
-        const getTime = path => path.split('/').pop().slice(0, -4)
-        return getTime(a).localeCompare(getTime(b))
-    })
-    .map(path => modules[path].default)
+    .sort((a, b) => getTime(a).localeCompare(getTime(b)))
+    .map(path => modules[path].default);
 
 const preloadedImages = images.map(src => {
     const img = new Image()
@@ -175,9 +179,9 @@ const totalImages = images.length
 
 const isLastImage = computed(() => currentIndex.value === totalImages - 1)
 const currentTimeDisplay = computed(() => {
-    const filename = images[currentIndex.value].split('/').pop()
-    return insertColonToTime(filename.slice(0, -4).slice(-4))
-})
+    const timeStr = getTime(images[currentIndex.value]);
+    return insertColonToTime(timeStr.slice(-4)); // 示例中截取后四位
+});
 
 // 图片的左上角和右下角边界
 const bounds = [
@@ -191,8 +195,8 @@ function insertColonToTime(timeStr) {
 }
 
 function getTimeFromIndex(index) {
-    const filename = images[index].split('/').pop()
-    return insertColonToTime(filename.slice(0, -4).slice(-4))
+    const timeStr = getTime(images[index]);
+    return insertColonToTime(timeStr.slice(-4));
 }
 
 function togglePlayback() {
@@ -280,10 +284,7 @@ const togglePanel = () => {
 }
 
 // filename类似202411130745.png，返回值为"202411130745"，即去掉".png"
-const getCurrentTimestamp = () => {
-    const filename = images[currentIndex.value].split('/').pop()
-    return filename.slice(0, -4)
-}
+const getCurrentTimestamp = () => getTime(images[currentIndex.value]);
 
 // 地图交互逻辑
 const setupMapInteraction = () => {
