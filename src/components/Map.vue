@@ -98,6 +98,7 @@ import { startIcon, endIcon, planeIcon } from '@/utils/icon.js'
 import { colonTimeToMinutes, splitFlightPath } from '@/utils/splitpath.js'
 import geoData from '@/assets/json/guangdong_geo.json'
 import { guangdongCities, chinaCities } from "@/utils/city-coordinates.js"
+import { ElMessage } from 'element-plus'
 const FADE_DURATION = 500
 const PLAY_INTERVAL = 2000
 
@@ -508,9 +509,13 @@ const submitPlan = async () => {
     const response = await routeApi.calcRoute(paramsJson)
     if (response.status === 200) {
         waypoints = response.data.route.waypoints
-        console.log("[submitPlan] waypoints response:", waypoints)
+        console.log("[submitPlan] response:", response.data)
+        if (response.data.summary.find_path == false) {
+            ElMessage.error('没有找到路径')
+            return
+        }
     } else {
-        alert('网络请求失败，请检查连接')
+        ElMessage.error('网络请求失败，请检查连接')
     }
     const startTime = insertColonToTime(formData.value.start_time.slice(-4)) // 获取0715格式
     const segments = splitFlightPath(waypoints, formData.value.speed, startTime)
@@ -576,11 +581,11 @@ const submitPlan = async () => {
 
 const validateForm = () => {
     if (!formData.value.start || !formData.value.end) {
-        alert('请先标记起点和终点')
+        ElMessage.error('请先标记起点和终点')
         return false
     }
     if (!formData.value.speed || formData.value.speed <= 0) {
-        alert('请输入有效的航行速度')
+        ElMessage.error('请输入有效的航行速度')
         return false
     }
     return true
