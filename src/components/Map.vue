@@ -162,26 +162,73 @@ const getTime = path => {
     return match[0];
 };
 
-const modules = import.meta.glob('@/assets/example/*.png', { eager: true })
-// images形如数组["/src/assets/example/202411130715.png", "/src/assets/example/202411130730.png"]
-const images = Object.keys(modules)
-    .sort((a, b) => getTime(a).localeCompare(getTime(b)))
-    .map(path => modules[path].default);
+// 构建图片URL列表
+const buildImageUrls = () => {
+    // 创建基础日期对象并设置时间
+    const baseDate = new Date(selectDate.value);
+    const formatDate = (date) => {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+        return `${y}${m}${d}`;
+    };
+    const dateStr = formatDate(selectDate.value);
+    const [hours, minutes] = selectTime.value.split(':').map(Number);
+    baseDate.setHours(hours);
+    baseDate.setMinutes(minutes);
 
-const preloadedImages = images.map(src => {
-    const img = new Image()
-    img.src = src
-    return img
-})
+    // 起始时间设为下一个15分钟
+    let current = new Date(baseDate);
+    current.setMinutes(current.getMinutes() + 15);
+
+    const imageUrls = [];
+    const timeStr = selectTime.value.replace(":", "-");
+    for (let i = 0; i < 16; i++) {
+        const year = current.getFullYear();
+        const month = String(current.getMonth() + 1).padStart(2, '0'); // 月份+1补零
+        const day = String(current.getDate()).padStart(2, '0');
+        const hours = String(current.getHours()).padStart(2, '0');
+        const minutes = String(current.getMinutes()).padStart(2, '0');
+
+        imageUrls.push(`http://49.233.204.126:8899/ImageData/${dateStr}/11/cloud_dugs_unet_3h/${timeStr}/${year}${month}${day}${hours}${minutes}.png` + '');
+        current.setMinutes(current.getMinutes() + 15); // 增加15分钟
+    }
+    console.table(imageUrls)
+    return imageUrls;
+}
+
+// const modules = import.meta.glob('@/assets/example/*.png', { eager: true })
+// images形如数组["/src/assets/example/202411130715.png", "/src/assets/example/202411130730.png"]
+const images = ref(buildImageUrls()) // 存储图片URL数组
+const preloadedImages = ref([]) // 存储预加载的图片对象
+
+// 加载逻辑
+const loadImages = () => {
+    const urls = buildImageUrls()
+
+    images.value = urls.sort() // 按时间顺序排序
+
+    // 预加载所有图片
+    preloadedImages.value = urls.map(src => {
+        const img = new Image()
+        img.src = src
+        return img
+    })
+}
+
+// 监听日期/时间变化
+watch([selectDate, selectTime], () => {
+    loadImages()
+}, { deep: true })
 
 const isPlaying = ref(false)
 const currentIndex = ref(0)
 const hoverIndex = ref(-1)
-const totalImages = images.length
+const totalImages = images.value.length
 
 const isLastImage = computed(() => currentIndex.value === totalImages - 1)
 const currentTimeDisplay = computed(() => {
-    const timeStr = getTime(images[currentIndex.value]);
+    const timeStr = getTime(images.value[currentIndex.value]);
     return insertColonToTime(timeStr.slice(-4)); // 示例中截取后四位
 });
 
@@ -197,7 +244,7 @@ function insertColonToTime(timeStr) {
 }
 
 function getTimeFromIndex(index) {
-    const timeStr = getTime(images[index]);
+    const timeStr = getTime(images.value[index]);
     return insertColonToTime(timeStr.slice(-4));
 }
 
@@ -275,7 +322,7 @@ const togglePanel = () => {
     if (showPanel.value) {
         // 记录时间戳
         formData.value.start_time = getCurrentTimestamp()
-        formData.value.mark_time = images[0].split('/').pop().slice(0, -4)
+        formData.value.mark_time = images.value[0].split('/').pop().slice(0, -4)
         // 暂停轮播
         stopPlayback()
         setupMapInteraction()
@@ -286,7 +333,7 @@ const togglePanel = () => {
 }
 
 // filename类似202411130745.png，返回值为"202411130745"，即去掉".png"
-const getCurrentTimestamp = () => getTime(images[currentIndex.value]);
+const getCurrentTimestamp = () => getTime(images.value[currentIndex.value]);
 
 // 地图交互逻辑
 const setupMapInteraction = () => {
@@ -574,7 +621,7 @@ watch(currentIndex, (newVal, oldVal) => {
     }
 
     const oldLayer = currentOverlay.value
-    const newImage = preloadedImages[newVal]
+    const newImage = preloadedImages.value[newVal]
 
     nextOverlay.value = L.imageOverlay(newImage.src, bounds, {
         opacity: 0,
@@ -585,6 +632,7 @@ watch(currentIndex, (newVal, oldVal) => {
 })
 
 onMounted(() => {
+    loadImages();
     map.value = L.map('map-container', {
         center: [23.132191, 116.266530],
         zoom: 7,
@@ -627,7 +675,7 @@ onMounted(() => {
     // Object.entries(chinaCities).forEach(([city, coord]) => {
     //     createTextMarker(city, coord).addTo(map.value)
     // })
-    currentOverlay.value = L.imageOverlay(preloadedImages[0].src, bounds, {
+    currentOverlay.value = L.imageOverlay(preloadedImages.value[0].src, bounds, {
         opacity: 0.5,
         minZoom: 5,
         maxZoom: 11,
