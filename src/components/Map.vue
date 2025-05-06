@@ -68,9 +68,9 @@
     <button class="plan-trigger" @click="togglePanel">Plan</button>
 
     <div class="datetime-picker">
-        <el-date-picker v-model="selectDate" style="width: 150px" type="date" placeholder="请选择日期" />
-        <el-time-select v-model="selectTime" style="width: 150px" start="00:00" step="00:15" end="23:45"
-            placeholder="请选择时间" />
+        <el-date-picker v-model="selectDate" style="width: 120px" type="date" placeholder="select date" />
+        <el-time-select v-model="selectTime" style="width: 120px" start="00:00" step="00:15" end="23:45"
+            placeholder="select time" />
     </div>
 
     <!-- 左侧定位的刻度条容器 -->
@@ -107,8 +107,10 @@ const nextOverlay = ref(null)
 const animationFrameFade = ref(null)
 const timer = ref(null)
 
-const selectDate = ref(null)
-const selectTime = ref(null)
+const selectDate = ref(new Date(2024, 10, 13)); // 注意月份是0-based，所以11月是10
+
+// 设置默认时间为07:15
+const selectTime = ref('07:15');
 
 const satellite = [
     {
