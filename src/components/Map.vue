@@ -511,7 +511,7 @@ const submitPlan = async () => {
         waypoints = response.data.route.waypoints
         console.log("[submitPlan] response:", response.data)
         if (response.data.summary.find_path == false) {
-            ElMessage.error('没有找到路径')
+            ElMessage.error('起点或终点距离气象灾害区域过近，不安全')
             return
         }
     } else {
@@ -547,6 +547,10 @@ const submitPlan = async () => {
 
                 // 计算段内小段时间
                 const segmentDuration = colonTimeToMinutes(endPoint.reach_time) - colonTimeToMinutes(startPoint.reach_time);
+                if (segmentDuration <= 0 || isNaN(segmentDuration)) {
+                    // console.error("Invalid segment duration:", segmentDuration, startPoint, endPoint);
+                    continue;
+                }
                 const segmentAnimationDuration = (segmentDuration / durationMinutes) * animationDuration;
 
                 // 执行动画
